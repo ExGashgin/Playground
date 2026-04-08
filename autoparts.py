@@ -35,24 +35,20 @@ def save_to_csv(data):
         st.error(f"Bazaya yazarkən xəta: {e}")
 
 def analyze_image(img_input):
-    """Şəkli optimallaşdırır və Gemini 1.5 Flash-a göndərir."""
-    # SÜRƏT ÜÇÜN: Şəkli oxu və ölçüsünü kiçilt (Low-res analiz sürətlidir)
-    image = Image.open(img_input)
-    image.thumbnail((600, 600), Image.LANCZOS)
+    # Şəkli açırıq
+    raw_image = Image.open(img_input)
     
-    # Model seçimi (Flash modeli sürət üçün ən yaxşısıdır)
+    # 1. FORMATI SİĞORTALAYIN: Mütləq RGB-yə çevir (HEIC və ya PNG-alpha xətalarını aradan qaldırır)
+    image = raw_image.convert("RGB")
+    
+    # 2. ÖLÇÜNÜ KİÇİLDİN: Sürət üçün vacibdir
+    image.thumbnail((512, 512), Image.LANCZOS)
+    
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     
-    prompt = """
-    Sən peşəkar bir avtomobil ehtiyyat hissələri anbar mütəxəssisisən.
-    Şəkildəki detalı dərhal tanı və bu formatda cavab ver:
-    Hissənin adı: (Məs: Əyləc bəndi)
-    Artikul/Kod: (Varsa kodu yaz, yoxdursa "Tapılmadı")
-    Texniki Parametrlər: (Qısa məlumat)
-    Təxmini Qiymət: (AZN ilə)
-    Yalnız bu formatda cavab ver, əlavə cümlə yazma.
-    """
+    prompt = "Avtomobil detalı: Ad, Kod, Parametr, Qiymət (AZN). Qısa yaz."
     
+    # 3. SORĞUNU GÖNDƏR
     response = model.generate_content([prompt, image])
     return response.text
 
