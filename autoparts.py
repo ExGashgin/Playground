@@ -1,112 +1,110 @@
 import streamlit as st
-import google.generativeai as genai
 import pandas as pd
 from PIL import Image
 import os
 from datetime import datetime
+from groq import Groq
+import base64
 import io
 
 # --- 1. SİSTEM AYARLARI ---
-st.set_page_config(page_title="Hissə Tanıma Sistemi", layout="wide", page_icon="🚗")
+st.set_page_config(page_title="Sürətli Hissə Analizi", layout="wide", page_icon="⚡")
 
-# API Key Təhlükəsizliyi (Streamlit Cloud və ya Lokal üçün)
-if "GOOGLE_API_KEY" in st.secrets:
-    api_key = st.secrets["GOOGLE_API_KEY"]
+# API Key (Streamlit Secrets və ya Lokal üçün)
+if "GROQ_API_KEY" in st.secrets:
+    GROQ_KEY = st.secrets["GROQ_API_KEY"]
 else:
-    # Bura öz real API açarınızı daxil edin
-    api_key = "SİZİN_API_AÇARINIZ"
+    GROQ_KEY = "SİZİN_GROQ_API_AÇARINIZ" # Bura açarınızı daxil edin
 
-genai.configure(api_key=api_key)
+client = Groq(api_key=GROQ_KEY)
 DB_FILE = "ehtiyyat_hisseleri.csv"
 
 # --- 2. KÖMƏKÇİ FUNKSİYALAR ---
 
-def save_to_csv(data):
-    """Məlumatları CSV faylına qeyd edir."""
-    try:
-        if not os.path.isfile(DB_FILE):
-            df = pd.DataFrame([data])
-            df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
-        else:
-            df = pd.read_csv(DB_FILE)
-            df = pd.concat([df, pd.DataFrame([data])], ignore_index=True)
-            df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
-    except Exception as e:
-        st.error(f"Bazaya yazarkən xəta: {e}")
+def encode_image(image):
+    """Şəkli Groq-un oxuya biləcəyi Base64 formatına salır və ölçüsünü kiçildir."""
+    # SÜRƏT ÜÇÜN: Şəkli RGB-yə çevir və kiçilt
+    img = image.convert("RGB")
+    img.thumbnail((512, 512), Image.LANCZOS)
+    
+    buffered = io.BytesIO()
+    img.save(buffered, format="JPEG", quality=80)
+    return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-def analyze_image(img_input):
-    # Şəkli açırıq
-    raw_image = Image.open(img_input)
+def analyze_with_groq(image):
+    """Llama 3.2 Vision modelini istifadə edərək ildırım sürətli analiz edir."""
+    base64_image = encode_image(image)
     
-    # 1. FORMATI SİĞORTALAYIN: Mütləq RGB-yə çevir (HEIC və ya PNG-alpha xətalarını aradan qaldırır)
-    image = raw_image.convert("RGB")
-    
-    # 2. ÖLÇÜNÜ KİÇİLDİN: Sürət üçün vacibdir
-    image.thumbnail((512, 512), Image.LANCZOS)
-    
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-    
-    prompt = "Avtomobil detalı: Ad, Kod, Parametr, Qiymət (AZN). Qısa yaz."
-    
-    # 3. SORĞUNU GÖNDƏR
-    response = model.generate_content([prompt, image])
-    return response.text
+    # Groq-un Llama 3.2 11B Vision modeli çox sürətlidir
+    completion = client.chat.completions.create(
+        model="llama-3.2-11b-vision-preview",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Bu avtomobil ehtiyyat hissəsini analiz et. Format: Hissənin adı, Artikul, Texniki parametr, Təxmini qiymət (AZN). Qısa və konkret ol."},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}",
+                        },
+                    },
+                ],
+            }
+        ],
+        temperature=0.1,
+        max_tokens=512,
+    )
+    return completion.choices[0].message.content
+
+def save_to_csv(data):
+    if not os.path.isfile(DB_FILE):
+        pd.DataFrame([data]).to_csv(DB_FILE, index=False, encoding='utf-8-sig')
+    else:
+        df = pd.read_csv(DB_FILE)
+        pd.concat([df, pd.DataFrame([data])], ignore_index=True).to_csv(DB_FILE, index=False, encoding='utf-8-sig')
 
 # --- 3. İNTERFEYS ---
-st.title("🚗 Süni İntellektli Ehtiyyat Hissəsi Katalogu")
-st.markdown("---")
+st.title("⚡ Groq ilə İldırım Sürətli Hissə Analizi")
+st.markdown("Llama 3.2 Vision modeli ilə saniyələr içində nəticə.")
 
 col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
-    st.subheader("📸 Detalı Tanıt")
+    st.subheader("📸 Şəkil Mənbəyi")
+    source = st.radio("Seçin:", ["Kamera", "Qalereya"], horizontal=True)
     
-    # İki seçim: Ya fayl yüklə, ya da dərhal şəkil çək
-    input_type = st.radio("Mənbə seçin:", ["Kamera ilə çək (Mobil/Webcam)", "Qalereyadan seç"], horizontal=True)
-    
-    img_data = None
-    if input_type == "Kamera ilə çək (Mobil/Webcam)":
-        img_data = st.camera_input("Hissənin şəklini mərkəzə gətirin")
-    else:
-        img_data = st.file_uploader("Şəkli bura yükləyin...", type=["jpg", "jpeg", "png"])
+    img_file = st.camera_input("Şəkil çək") if source == "Kamera" else st.file_uploader("Şəkil yüklə", type=["jpg", "png", "jpeg"])
 
-    if img_data is not None:
-        if st.button("ANALİZ ET VƏ QEYD ET", type="primary", use_container_width=True):
-            with st.spinner('Süni intellekt analiz edir...'):
+    if img_file:
+        if st.button("SÜRATLİ ANALİZ", type="primary", use_container_width=True):
+            with st.spinner('Groq emal edir...'):
                 try:
-                    # Analiz
-                    result = analyze_image(img_data)
+                    pil_img = Image.open(img_file)
+                    result = analyze_with_groq(pil_img)
                     
-                    # Nəticəni göstər
-                    st.success("Analiz tamamlandı!")
-                    st.markdown(f"**Nəticə:**\n\n{result}")
+                    st.success("Tamamlandı!")
+                    st.write(result)
                     
-                    # Bazaya hazırlıq
-                    data_entry = {
+                    # Log yazmaq
+                    save_to_csv({
                         "Tarix": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "Analiz": result.replace('\n', ' | ')
-                    }
-                    save_to_csv(data_entry)
-                    st.rerun() # Tarixçəni yeniləmək üçün
+                        "Məlumat": result.replace('\n', ' | ')
+                    })
+                    st.rerun()
                 except Exception as e:
-                    st.error(f"Xəta baş verdi: {str(e)}")
+                    st.error(f"Xəta: {e}")
 
 with col2:
-    st.subheader("📋 Qeydiyyat Tarixçəsi")
+    st.subheader("📋 Tarixçə")
     if os.path.isfile(DB_FILE):
         df = pd.read_csv(DB_FILE)
-        st.dataframe(df, use_container_width=True, height=500)
+        st.dataframe(df, use_container_width=True, height=450)
         
-        # Yükləmə düymələri
         csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("Excel/CSV kimi yüklə", data=csv, file_name="anbar_log.csv", mime="text/csv")
-        
-        if st.button("Tarixçəni sıfırla"):
-            os.remove(DB_FILE)
-            st.rerun()
+        st.download_button("📥 Yüklə (CSV)", data=csv, file_name="parts_data.csv")
     else:
-        st.info("Hələ heç bir qeyd yoxdur. Şəkil analiz etdikdən sonra burada görünəcək.")
+        st.info("Hələ qeyd yoxdur.")
 
-# --- FOOTER ---
 st.markdown("---")
-st.caption("v2.0 Beta | Sürətli Analiz və Kamera Dəstəyi aktivdir.")
+st.caption("Powered by Groq | Llama 3.2 Vision")
