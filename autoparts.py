@@ -7,7 +7,7 @@ from datetime import datetime
 
 # 1. Gemini API Ayarları (Bura öz API açarınızı daxil edin)
 # API açarını https://aistudio.google.com/ ünvanından pulsuz ala bilərsiniz
-os.environ["GOOGLE_API_KEY"] = "YOUR_GEMINI_API_KEY"
+os.environ["GOOGLE_API_KEY"] = "gen-lang-client-0405311489"
 genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 
 # 2. Lokal Database (CSV) Faylı
