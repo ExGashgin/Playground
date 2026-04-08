@@ -30,23 +30,23 @@ def save_to_csv(data):
         df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
 
 def analyze_image(image):
-    """Gemini 1.5 Flash modelini istifadə edərək şəkli analiz edir."""
-    # 'gemini-1.5-flash-latest' 404 xətalarının qarşısını almaq üçün ən etibarlı seçimdir
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     
+    # SÜRAT OPTİMİZASİYASI: Şəkli kiçiltmək (Sürətli transfer üçün)
+    # Gemini-yə 512px-lik detal tam kifayət edir
+    image.thumbnail((512, 512), Image.LANCZOS)
+    
     prompt = """
-    Sən bir avtomobil ehtiyyat hissələri üzrə mütəxəssissən. 
-    Şəkildəki detalı analiz et və aşağıdakı xanalara uyğun məlumat ver:
-    
-    Hissənin adı: 
-    Artikul/Kod: 
-    Parametrlər (texniki): 
-    Təxmini Bazar Qiyməti (AZN): 
-    
-    Zəhmət olmasa yalnız bu formatda cavab ver, əlavə giriş cümlələri yazma.
+    Avtomobil ehtiyyat hissəsini qısaca analiz et:
+    Ad: 
+    Kod: 
+    Parametr: 
+    Qiymət: 
+    Qısa cavab ver.
     """
     
-    response = model.generate_content([prompt, image])
+    # SÜRAT OPTİMİZASİYASI: stream=True cavabın hissə-hissə gəlməsini təmin edir
+    response = model.generate_content([prompt, image], stream=False)
     return response.text
 
 # --- Streamlit İnterfeysi ---
